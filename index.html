@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090909">
+  <title>Escala | Btudo</title>
+  <style>
+    :root { color-scheme: light; --black:#090909; --gold:#f2c52f; --paper:#f7f6f2; --ink:#20201d; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font-family:Arial,Helvetica,sans-serif; }
+    .brand { min-height:148px; display:flex; justify-content:center; align-items:center; padding:8px 16px; background:var(--black); border-bottom:5px solid var(--gold); }
+    .brand img { display:block; width:auto; height:auto; max-width:100%; max-height:138px; object-fit:contain; }
+    main { width:min(100% - 32px, 1100px); margin:clamp(26px,5vw,48px) auto; }
+    .intro { margin-bottom:22px; }
+    h1 { margin:0 0 7px; font-size:clamp(1.7rem,4vw,2.2rem); }
+    .intro p { margin:0; color:#66645e; line-height:1.5; }
+    #status { margin:16px 0; padding:14px 16px; border:1px solid #e4e1d8; border-radius:10px; background:#fff; color:#66645e; }
+    #status[hidden] { display:none; }
+    .days { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr)); gap:16px; }
+    .day { overflow:hidden; border:1px solid #e4e1d8; border-radius:14px; background:#fff; box-shadow:0 8px 24px #19170e0a; }
+    .day h2 { margin:0; padding:14px 18px; background:var(--black); color:#fff; font-size:1.08rem; text-transform:capitalize; }
+    .shift { padding:15px 18px 8px; }
+    .shift + .shift { border-top:1px solid #eeeae0; }
+    .shift h3 { margin:0 0 10px; color:#71600e; font-size:.83rem; letter-spacing:.08em; text-transform:uppercase; }
+    .people { margin:0; padding:0; list-style:none; }
+    .person { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; padding:8px 0 10px; border-bottom:1px solid #f1efe9; }
+    .person:last-child { border-bottom:0; }
+    .person-name { font-weight:700; }
+    .person-time { color:#66645e; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .empty-day { padding:18px; color:#77746d; }
+    footer { padding:22px; color:#8b8981; font-size:.8rem; text-align:center; }
+    @media (max-width:480px) { .brand { min-height:116px; } .brand img { max-height:106px; } main { width:min(100% - 24px,1100px); } }
+  </style>
+</head>
+<body>
+  <header class="brand">
+    <img src="./btudo-faixa.jpg" alt="Btudo — Bazar, Utilidades e Alimentos">
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <h1 id="page-title">Escala semanal</h1>
+      <p id="week-label">Confira os dias e turnos da equipe Btudo.</p>
+    </section>
+    <p id="status" role="status">Carregando a escala…</p>
+    <div id="days" class="days" aria-live="polite"></div>
+  </main>
+  <footer>Btudo · Bazar, Utilidades e Alimentos</footer>
+  <script>
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSafL87qIoSIYbIMHWF_Vw8YM7D0C-RBF6zagPE4CIxWJezwkqybg42O-XQ7mV2oRpvIGF3rPbtUR6u/pub?output=csv';
+    const DAY_COLUMNS = [
+      ['Segunda', 'segunda-feira', 'segunda'], ['Terça', 'terça-feira', 'terca-feira', 'terca'],
+      ['Quarta', 'quarta-feira', 'quarta'], ['Quinta', 'quinta-feira', 'quinta'],
+      ['Sexta', 'sexta-feira', 'sexta'], ['Sábado', 'sábado', 'sabado'], ['Domingo', 'domingo']
+    ];
+    const normalize = value => String(value ?? '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const status = document.getElementById('status');
+    const daysRoot = document.getElementById('days');
+
+    function parseCSV(text) {
+      const rows = [];
+      let row = [], field = '', quoted = false;
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        if (quoted) {
+          if (char === '"' && text[i + 1] === '"') { field += '"'; i++; }
+          else if (char === '"') quoted = false;
+          else field += char;
+        } else if (char === '"') quoted = true;
+        else if (char === ',') { row.push(field); field = ''; }
+        else if (char === '\n') { row.push(field.replace(/\r$/, '')); rows.push(row); row = []; field = ''; }
+        else field += char;
+      }
+      if (field.length || row.length) { row.push(field.replace(/\r$/, '')); rows.push(row); }
+      return rows;
+    }
+
+    function findColumn(headers, names) {
+      const wanted = names.map(normalize);
+      return headers.findIndex(header => wanted.includes(normalize(header)));
+    }
+
+    function addPerson(list, name, entry, exit, isOff) {
+      if (!list.some(person => normalize(person.name) === normalize(name))) list.push({ name, entry, exit, isOff });
+    }
+
+    function renderDay(dayName, shifts) {
+      const card = document.createElement('section');
+      card.className = 'day';
+      const title = document.createElement('h2');
+      title.textContent = dayName;
+      card.append(title);
+      let hasPeople = false;
+      for (const shiftName of ['Manhã', 'Tarde']) {
+        const people = shifts[shiftName];
+        if (!people.length) continue;
+        hasPeople = true;
+        const section = document.createElement('section');
+        section.className = 'shift';
+        const heading = document.createElement('h3');
+        heading.textContent = shiftName;
+        const list = document.createElement('ul');
+        list.className = 'people';
+        for (const person of people) {
+          const item = document.createElement('li');
+          item.className = 'person';
+          const personName = document.createElement('span');
+          personName.className = 'person-name';
+          personName.textContent = person.name;
+          item.append(personName);
+          if (person.isOff) {
+            const off = document.createElement('span');
+            off.className = 'person-time';
+            off.textContent = 'Folga';
+            item.append(off);
+          } else if (person.entry || person.exit) {
+            const time = document.createElement('span');
+            time.className = 'person-time';
+            time.textContent = [person.entry, person.exit].filter(Boolean).join(' – ');
+            item.append(time);
+          }
+          list.append(item);
+        }
+        section.append(heading, list);
+        card.append(section);
+      }
+      if (!hasPeople) {
+        const empty = document.createElement('p');
+        empty.className = 'empty-day';
+        empty.textContent = 'Ninguém escalado neste dia.';
+        card.append(empty);
+      }
+      daysRoot.append(card);
+    }
+
+    async function loadSchedule() {
+      try {
+        const response = await fetch(CSV_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Não foi possível acessar a planilha.');
+        const csv = await response.text();
+        const rows = parseCSV(csv).filter(row => row.some(value => String(value).trim() !== ''));
+        if (rows.length < 2) throw new Error('A planilha ainda não tem linhas de escala.');
+        const headers = rows[0].map(value => value.replace(/^\uFEFF/, '').trim());
+        const nameCol = findColumn(headers, ['Nome', 'Funcionário', 'Funcionario']);
+        const shiftCol = findColumn(headers, ['Turno']);
+        const entryCol = findColumn(headers, ['Entrada', 'Horário de entrada', 'Horario de entrada']);
+        const exitCol = findColumn(headers, ['Saída', 'Saida', 'Horário de saída', 'Horario de saida']);
+        const dayCols = DAY_COLUMNS.map(aliases => findColumn(headers, aliases));
+        if ([nameCol, shiftCol].some(index => index < 0) || dayCols.some(index => index < 0)) {
+          throw new Error('Confira se os cabeçalhos Nome, Turno e os sete dias da semana estão na planilha.');
+        }
+
+        const schedule = DAY_COLUMNS.map(() => ({ Manhã: [], Tarde: [] }));
+        for (const row of rows.slice(1)) {
+          const name = String(row[nameCol] ?? '').trim();
+          const shiftText = normalize(row[shiftCol]);
+          if (!name || !shiftText) continue;
+          const shiftName = shiftText.startsWith('manh') ? 'Manhã' : shiftText.startsWith('tard') ? 'Tarde' : null;
+          if (!shiftName) continue;
+          const entry = entryCol < 0 ? '' : String(row[entryCol] ?? '').trim();
+          const exit = exitCol < 0 ? '' : String(row[exitCol] ?? '').trim();
+          dayCols.forEach((column, dayIndex) => {
+            const dayStatus = normalize(row[column]);
+            if (['trabalha', 'trabalhar', 'sim', 'x', 'escala'].includes(dayStatus)) {
+              addPerson(schedule[dayIndex][shiftName], name, entry, exit, false);
+            } else if (dayStatus === 'folga') {
+              addPerson(schedule[dayIndex][shiftName], name, '', '', true);
+            }
+          });
+        }
+        DAY_COLUMNS.forEach((aliases, index) => renderDay(aliases[0], schedule[index]));
+        status.hidden = true;
+      } catch (error) {
+        status.textContent = error.message + ' Se o arquivo estiver aberto diretamente no computador, use uma hospedagem para permitir o carregamento do CSV.';
+      }
+    }
+    loadSchedule();
+  </script>
+</body>
+</html>
+
+
+
+
