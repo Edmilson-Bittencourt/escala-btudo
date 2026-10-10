@@ -80,6 +80,20 @@
       return headers.findIndex(header => wanted.includes(normalize(header)));
     }
 
+    function findDayColumn(headers, aliases) {
+      const wanted = aliases.map(normalize);
+      return headers.findIndex(header => {
+        const value = normalize(header);
+        return wanted.some(day => value === day || value.startsWith(day + ' ') || value.startsWith(day + ' (') || value.startsWith(day + ' -'));
+      });
+    }
+
+    function dateFromDayHeader(header) {
+      const match = String(header).match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+      if (!match) return '';
+      return `${match[1].padStart(2, '0')}/${match[2].padStart(2, '0')}`;
+    }
+
     function addPerson(list, name, entry, exit, isOff) {
       if (!list.some(person => normalize(person.name) === normalize(name))) list.push({ name, entry, exit, isOff });
     }
@@ -145,7 +159,12 @@
         const shiftCol = findColumn(headers, ['Turno']);
         const entryCol = findColumn(headers, ['Entrada', 'Horário de entrada', 'Horario de entrada']);
         const exitCol = findColumn(headers, ['Saída', 'Saida', 'Horário de saída', 'Horario de saida']);
-        const dayCols = DAY_COLUMNS.map(aliases => findColumn(headers, aliases));
+        const dayCols = DAY_COLUMNS.map(aliases => findDayColumn(headers, aliases));
+        const dateRow = rows.slice(1).find(row => !String(row[nameCol] ?? '').trim() && dayCols.some(column => dateFromDayHeader(row[column])));
+        const dayLabels = dayCols.map((column, index) => {
+          const date = dateFromDayHeader(headers[column]) || (dateRow ? dateFromDayHeader(dateRow[column]) : '');
+          return date ? `${DAY_COLUMNS[index][0]} · ${date}` : DAY_COLUMNS[index][0];
+        });
         if ([nameCol, shiftCol].some(index => index < 0) || dayCols.some(index => index < 0)) {
           throw new Error('Confira se os cabeçalhos Nome, Turno e os sete dias da semana estão na planilha.');
         }
@@ -168,7 +187,7 @@
             }
           });
         }
-        DAY_COLUMNS.forEach((aliases, index) => renderDay(aliases[0], schedule[index]));
+        dayLabels.forEach((label, index) => renderDay(label, schedule[index]));
         status.hidden = true;
       } catch (error) {
         status.textContent = error.message + ' Se o arquivo estiver aberto diretamente no computador, use uma hospedagem para permitir o carregamento do CSV.';
@@ -178,6 +197,9 @@
   </script>
 </body>
 </html>
+
+
+
 
 
 
