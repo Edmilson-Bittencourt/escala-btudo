@@ -95,7 +95,7 @@
     }
 
     function addPerson(list, name, entry, exit, isOff) {
-      if (!list.some(person => normalize(person.name) === normalize(name))) list.push({ name, entry, exit, isOff });
+      list.push({ name, entry, exit, isOff });
     }
 
     function renderDay(dayName, shifts) {
@@ -197,6 +197,7 @@
   </script>
 </body>
 </html>
+
 
 
 
