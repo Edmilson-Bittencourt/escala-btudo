@@ -187,6 +187,7 @@
             }
           });
         }
+        daysRoot.replaceChildren();
         dayLabels.forEach((label, index) => renderDay(label, schedule[index]));
         status.hidden = true;
       } catch (error) {
@@ -194,9 +195,12 @@
       }
     }
     loadSchedule();
+    setInterval(loadSchedule, 60 * 1000);
   </script>
 </body>
 </html>
+
+
 
 
 
