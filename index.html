@@ -149,7 +149,7 @@
 
     async function loadSchedule() {
       try {
-        const response = await fetch(CSV_URL, { cache: 'no-store' });
+        const response = await fetch(CSV_URL + '&_=' + Date.now(), { cache: 'no-store' });
         if (!response.ok) throw new Error('Não foi possível acessar a planilha.');
         const csv = await response.text();
         const rows = parseCSV(csv).filter(row => row.some(value => String(value).trim() !== ''));
@@ -197,6 +197,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 
